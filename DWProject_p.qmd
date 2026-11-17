@@ -1,0 +1,418 @@
+---
+title: "Morbid Symbolism in Art and Historical Crises"
+author: "Kayla Tran (kt26422), Pranati Kompella (pk24235)"
+format: 
+  html:
+    self-contained: true    
+    df-print: paged
+---
+
+## Data Sources
+
+We use three data sources from three different organizations: The Metropolitan Museum of Art, The Museum of Modern Art, and the Conflict Catalog (Peter Brecke, Georgia Tech).
+
+### Source A: The Met Open Access
+
+![Raw Met data: header row and first rows of MetObjects.csv](images/met_raw.png){width="100%" fig-alt="First rows of the Met Open Access CSV"}
+
+**Issues reading this source:** `Object Date` is free text (e.g. "ca. 1650", "19th century"), so we drop it and use the numeric `Object Begin Date` / `Object End Date` columns instead. Many columns are more than 50% empty.
+
+### Source B: MoMA Collection
+
+![Raw MoMA data: header row and first rows of Artworks.csv](images/moma_raw.png){width="100%" fig-alt="First rows of the MoMA Artworks CSV"}
+
+**Issues reading this source:** `ArtistBio`, `Nationality`, and `Gender` are wrapped in parentheses, and `Date` mixes formats ("1896", "1976-77", "c. 1917").
+
+### Source C: Conflict Catalog
+
+![Raw Conflict Catalog data: header row and first rows](images/conflict_raw.png){width="100%" fig-alt="First rows of the Conflict Catalog spreadsheet"}
+
+**Issues reading this source:** the `Name` column has the years embedded in the conflict name, fatality counts are often missing, and `Common Name` is blank for most rows.
+
+## Course set up
+
+```{r}
+# Checks that R and each package are installed and new enough for this course.
+# Stops with a list of everything that needs fixing, and how to fix it.
+check_course_versions <- function(required, area) {
+  problems <- character(0)
+  to_install <- character(0)
+  found <- character(0)
+  for (name in names(required)) {
+    need <- required[[name]]
+    if (name == "R") {
+      have <- getRversion()
+      if (have < need) {
+        problems <- c(problems, sprintf(
+          "R is version %s; this course needs %s or newer. Install the current R from https://cran.r-project.org/ (see https://howisonlab.github.io/datawrangling/current/rtidyverse/rstudio_installation.html), then reinstall your packages.",
+          have, need))
+      }
+      found <- c(found, paste("R", have))
+    } else if (!nzchar(system.file(package = name))) {
+      problems <- c(problems, sprintf("%s is not installed.", name))
+      to_install <- c(to_install, name)
+    } else {
+      have <- packageVersion(name)
+      if (have < need) {
+        problems <- c(problems, sprintf(
+          "%s is version %s; this course needs %s or newer.", name, have, need))
+        to_install <- c(to_install, name)
+      } else if (isNamespaceLoaded(name) && getNamespaceVersion(name) != have) {
+        problems <- c(problems, sprintf(
+          "%s %s is installed, but this R session is still using %s. Restart R.",
+          name, have, getNamespaceVersion(name)))
+      }
+      found <- c(found, paste(name, have))
+    }
+  }
+  if (length(problems) > 0) {
+    fix <- "In RStudio choose Session > Restart R"
+    if (length(to_install) > 0) {
+      fix <- paste0(fix, ", then run this in the Console:\n  install.packages(c(",
+                    paste0('"', to_install, '"', collapse = ", "), "))\n")
+    }
+    stop("Course setup (", area, ") found problems:\n  - ",
+         paste(problems, collapse = "\n  - "), "\n\n",
+         fix, "\nThen run the setup chunk(s) again.", call. = FALSE)
+  }
+  cat("Course setup OK (", area, "): ", paste(found, collapse = ", "), "\n", sep = "")
+}
+
+check_course_versions(c(
+  R = "4.5.0",         # CRAN builds Mac/Windows packages for the current and previous R only
+  tidyverse = "2.0.0",
+  dplyr = "1.2.0",     # recode_values() and replace_values()
+  tidyr = "1.3.0",     # separate_wider_delim()
+  gt = "1.0.0",        # needed by gtExtras
+  gtExtras = "0.6.1"   # works with ggplot2 4
+), "R")
+
+library(tidyverse)
+library(gt)
+library(gtExtras)
+```
+
+```{r}
+# needs check_course_versions() from the Course setup (R) chunk
+check_course_versions(c(
+  DBI = "1.0.0",
+  duckdb = "1.5.5"     # duckdb(shared_home = FALSE)
+), "SQL")
+
+library(DBI)
+library(duckdb)
+options(duckdb.enable_rstudio_connection_pane = TRUE)
+
+# a temporary in-memory database, nothing saved to a file
+drv <- duckdb(shared_home = FALSE)
+con <- dbConnect(drv)
+```
+
+```{r}
+# needs check_course_versions() from the Course setup (R) chunk
+check_course_versions(c(
+  reticulate = "1.41.0"  # py_require()
+), "Python")
+
+library(reticulate)
+# reticulate sets up a Python with these packages for us (the first run downloads them).
+# This must run before any python chunk: if Python has already started, restart R first.
+py_require(c(
+  "pandas>=3.0",         # pd.col() in assign
+  "numpy",
+  "pyjanitor"            # clean_names() for snake_case column names
+), python_version = ">=3.11")
+```
+
+```{python}
+import sys
+import pandas as pd
+import numpy as np
+import janitor
+from io import StringIO
+
+print("Course setup OK (Python): Python", sys.version.split()[0], "pandas", pd.__version__)
+```
+
+## R Tidyverse
+
+### Load Source A: The Met
+
+```{r}
+#| label: r-load-met
+# guess_max: some columns look numeric for thousands of rows, then turn to text
+met_raw <- read_csv("data/MetObjects.csv", guess_max = 100000)
+
+glimpse(met_raw)
+```
+
+```{r}
+#| label: r-preview-met
+met_raw |>
+  select(`Object ID`, Title, `Object Date`, `Object Begin Date`,
+         `Object End Date`, Medium, Classification) |>
+  head(5)
+```
+
+### Load Source B: MoMA
+
+```{r}
+#| label: r-load-moma
+moma_raw <- read_csv("data/Artworks.csv")
+
+glimpse(moma_raw)
+```
+
+```{r}
+#| label: r-preview-moma
+moma_raw |>
+  select(Title, Artist, ArtistBio, Nationality, Gender, Date, Medium) |>
+  head(5)
+```
+
+### Load Source C: Conflict Catalog
+
+```{r}
+#| label: r-load-conflict
+library(readxl)
+
+conflict_raw <- read_excel("data/Conflict-Catalog-18-vars.xlsx")
+
+glimpse(conflict_raw)
+```
+
+```{r}
+#| label: r-preview-conflict
+conflict_raw |>
+  head(5)
+```
+
+### Clean and combine
+
+**Cleaning the Met dataset:**
+
+- Keep only Object Name = painting (for now)
+
+- Keep only paintings from 1400 - 2000 (this is the only range the Conflict Catalog covers)
+
+- Pick which columns to keep: Object Name, Title, Artist Display Name, Artist Nationality, Artist Gender, Object Begin Date, Object End Date, Medium, Tags, Tags Wikidata URL
+
+**Cleaning the MoMA dataset:**
+
+- Keep only Classification = painting (for now)
+
+- Keep only paintings before 2000
+
+- Pick which columns to keep: Classification, Title, Artist, Nationality, Gender, Date, Medium
+
+Columns in the Met dataset which don't have corresponding columns in the MoMA (we need to find how to populate these):
+
+- The Met has Object begin & end dates, the MoMA has just "date". This can be repeated in 2 columns start year & end year (they can be the same if there is only 1 date, or they can be different if the date is a range - this will have to be done using CaseWhen, probably).
+
+- The Met has tags but the MoMA doesn't. There may be tags about paintings online?? Or can we use AI to do this??
+
+Cleaning the Conflict Catalog:
+
+- Keep only rows with more than 1000 fatalities
+
+- Columns to keep: Name, Start Year, End Year
+
+- Split contents of "Name" column into 2:
+
+  - Country: first comma-separated part goes into Country
+
+  - Actors (i.e. people who are fighting): second comma-separated part goes into Actors
+
+### Transformations
+
+We need to decide a common schema for the Met & MoMA datasets (perhaps just picking the column names in the Met dataset).
+
+- We will add a new column to the Met table "museum", and the values for this will be "Met" for all (no clue how to do this tbh)
+
+- We will add the rows from the MoMA table to the Met dataset, and the values for these rows on the "museum" column will be "MoMA"
+
+| Common column | Met source          | MoMA source  |
+|---------------|---------------------|--------------|
+| `museum`      | “Met” (new)         | “MoMA” (new) |
+| `title`       | Title               | Title        |
+| `artist`      | Artist Display Name | Artist       |
+| `nationality` | Artist Nationality  | Nationality  |
+| `gender`      | Artist Gender       | Gender       |
+| `start_year`  | Object Begin Date   | Start Year   |
+| `end_year`    | Object End Date     | End Year     |
+| `medium`      | Medium              | Medium       |
+| `tags`        | Tags                | NA           |
+
+**Is a painting morbid or not?**
+
+- We will create a lookup table "morbidity" of morbid keywords (tags) from the Met & MoMA datasets. Each keyword will have a classification of "is_morbid" or "not_morbid".
+
+- We will left join the "morbidity" to the combined Met & MoMA dataset on the keywords column. If a keyword from the "morbidity" table's keyword column is present in the combined table's keyword list, the corresponding classification is added to the left table. (I'm actually not sure if this is how it works?? Or if the values in the cells need to be exactly equal for a join)
+
+We need to create a lookup table for country names, and then compare with the country names being used in each of the datasets.
+
+We will add a "standardised country name" column to the three datasets by joining the lookup table.
+
+Then we will join the Conflicts table (left join) to the Met & MoMA combined table on the "standardised country name" column.
+
+Assign a "crisis_status":
+
+- during: painted between StartYear and EndYear of a conflict in the artist’s country
+
+- after: painted 1–10 years after a conflict ended
+
+- none: no matching conflict
+
+<!-- -->
+
+- Assumption is that we treat the artist’s nationality as where the painting was made. This won’t always be true but it is a compromise for now.
+
+### Analysis 
+
+We will do some aggregations to determine whether paintings are more morbid when conflicts happen:
+
+- Group by crisis_status (during / after / none) and calculate the share of morbid paintings in each group. Present it as a table and bar chart.
+
+- Group by decade and plot the share of morbid paintings next to the total conflict fatalities per decade. Can also check the correlation for the same decade and with a one-decade lag (fatalities in decade *t* vs. morbidity in decade *t+1*)
+
+- For countries with enough paintings (e.g. 100+), compare the morbid share in conflict years with non-conflict years in the same country. We can see if some countries/cultures produce more morbid art by default.
+
+- Check whether large conflicts are linked to a bigger increase than small ones (still thinking through how to do this one)
+
+## DuckDB SQL
+
+```{r}
+#| label: sql-excel-extension
+# DuckDB needs its excel extension to read the Conflict Catalog .xlsx
+dbExecute(con, "INSTALL excel;")
+dbExecute(con, "LOAD excel;")
+```
+
+### Load Source A: The Met
+
+```{sql}
+#| label: sql-load-met
+#| connection: con
+CREATE OR REPLACE TABLE met_raw AS
+SELECT *
+FROM read_csv('data/MetObjects.csv', sample_size = -1);
+```
+
+```{sql}
+#| label: sql-preview-met
+#| connection: con
+SELECT "Object ID", Title, "Object Date", "Object Begin Date",
+       "Object End Date", Medium, Classification
+FROM met_raw
+LIMIT 5;
+```
+
+### Load Source B: MoMA
+
+```{sql}
+#| label: sql-load-moma
+#| connection: con
+CREATE OR REPLACE TABLE moma_raw AS
+SELECT *
+FROM read_csv('data/Artworks.csv');
+```
+
+```{sql}
+#| label: sql-preview-moma
+#| connection: con
+SELECT Title, Artist, ArtistBio, Nationality, Gender, Date, Medium
+FROM moma_raw
+LIMIT 5;
+```
+
+### Load Source C: Conflict Catalog
+
+```{sql}
+#| label: sql-load-conflict
+#| connection: con
+CREATE OR REPLACE TABLE conflict_raw AS
+SELECT *
+FROM read_xlsx('data/conflict_catalog.xlsx');
+```
+
+```{sql}
+#| label: sql-preview-conflict
+#| connection: con
+SELECT *
+FROM conflict_raw
+LIMIT 5;
+```
+
+### Clean and combine
+
+### Analysis output
+
+## Python Pandas
+
+### Load Source A: The Met
+
+```{python}
+#| label: py-load-met
+# low_memory=False: read the whole file before choosing column types
+met_raw = pd.read_csv("data/MetObjects.csv", low_memory=False)
+
+met_raw.info()
+```
+
+```{python}
+#| label: py-preview-met
+met_cols = [
+    "Object ID", "Title", "Object Date", "Object Begin Date",
+    "Object End Date", "Medium", "Classification",
+]
+met_raw[met_cols].head(5)
+```
+
+### Load Source B: MoMA
+
+```{python}
+#| label: py-load-moma
+moma_raw = pd.read_csv("data/Artworks.csv")
+
+moma_raw.info()
+```
+
+```{python}
+#| label: py-preview-moma
+moma_cols = [
+    "Title", "Artist", "ArtistBio", "Nationality", "Gender", "Date", "Medium",
+]
+moma_raw[moma_cols].head(5)
+```
+
+### Load Source C: Conflict Catalog
+
+```{python}
+#| label: py-load-conflict
+conflict_raw = pd.read_excel("data/conflict_catalog.xlsx")
+
+conflict_raw.info()
+```
+
+```{python}
+#| label: py-preview-conflict
+conflict_raw.head(5)
+```
+
+### Clean and combine
+
+### Analysis output
+
+## Excel Power Query
+
+<!-- Power Query can't run in Quarto: add screenshots of each step here -->
+
+### Load Source A: The Met
+
+### Load Source B: MoMA
+
+### Load Source C: Conflict Catalog
+
+### Clean and combine
+
+### Analysis output
