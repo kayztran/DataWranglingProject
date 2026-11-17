@@ -211,7 +211,92 @@ Columns in the Met dataset which don't have corresponding columns in the MoMA (w
 
 - The Met has tags but the MoMA doesn't. There may be tags about paintings online?? Or can we use AI to do this??
 
-Cleaning the Conflict Catalog:
+```{r}
+
+moma_clean <- moma_raw |>
+  # Keep only paintings
+  filter(Classification == "Painting") |> #2458 rows 
+  
+  # Keep only relevant columns 
+  select(Classification, Title, Artist, Nationality, Gender, Date, Medium) |>
+  
+  # break up the date to match Met schema - with a start & end date 
+  # first we tried to do this by using case_when directly, but it kept throwing errors and we decided to break all possible pieces before assembling the way we want with case when 
+  separate_wider_regex(
+    Date, 
+    patterns = c(
+      start_century = "\\d{2}",
+      start_years = "\\d{2}",        
+      end_years = "\\d*"),
+      too_few = "align_start" #this is to not get errors when there are rows with no dates or incomplete entries 
+    ) |>
+  mutate(
+    start_year = as.numeric(start_century) * 100 + as.numeric(start_years),
+    end_year = case_when(
+      str_length(end_years) == 4 ~ as.numeric(end_years),
+      str_length(end_years) == 2 ~ as.numeric(start_century) * 100 + as.numeric(end_years),
+      TRUE ~ start_year
+    ),
+    #if the end year is in the next century
+    end_year = case_when(
+      end_year < start_year ~ end_year + 100,
+      TRUE ~ end_year
+    ))
+  
+  
+moma_clean
+```
+
+#this thing seems like it works but some dates are added as c. 1980 and also the end year is not correct with the dashes still..
+
+```{r}
+
+moma_clean <- moma_raw |>
+  # Keep only paintings
+  filter(Classification == "Painting") |> #2458 rows 
+  
+  # Keep only relevant columns 
+  select(Classification, Title, Artist, Nationality, Gender, Date, Medium) |>
+  
+  # break up the date to match Met schema - with a start & end date 
+  # first we tried to do this by using case_when directly, but it kept throwing errors and we decided to break all possible pieces before assembling the way we want with case when 
+  separate_wider_regex(
+    Date, 
+    patterns = c(
+    before = ".*?",           # text before the year like "c. "
+    start_century = "\\d{2}",      
+    start_years = "\\d{2}",        
+    dash = "\\s*[-–]?\\s*", # dash between years
+    end_years = "\\d*",   
+    after = ".*" # leftover text, like "s" in "1910s" (why cant they type consistently????)
+  ),
+    too_few = "align_start" #this is to not get errors when there are rows with no dates or incomplete entries 
+  ) |>
+  mutate(
+    start_year = as.numeric(start_century) * 100 + as.numeric(start_years),
+    end_year = case_when(
+      str_length(end_years) == 4 ~ as.numeric(end_years),
+      str_length(end_years) == 2 ~ as.numeric(start_century) * 100 + as.numeric(end_years),
+      TRUE ~ start_year
+    ),
+    #if the end year is in the next century
+    end_year = case_when(
+      end_year < start_year ~ end_year + 100,
+      TRUE ~ end_year
+    )) |>
+  
+  #filter rows, remove after 2000 and empty dates
+  drop_na(start_year) |>
+  filter(start_year < 2000) |> # now there are 2225 rows
+  
+  # drop temporary columns during splitting
+  select(Classification, Title, Artist, Nationality, Gender, Medium, start_year, end_year)
+
+
+moma_clean
+```
+
+**Cleaning the Conflict Catalog:**
 
 - Keep only rows with more than 1000 fatalities
 
