@@ -30,6 +30,7 @@ We use three data sources from three different organizations: The Metropolitan M
 **Issues reading this source:** the 'Name' column has the years embedded in the conflict name, fatality counts are often missing, and 'Common Name' is blank for most rows.
 
 # Course set up
+
 ```{r}
 # Checks that R and each package are installed and new enough for this course.
 # Stops with a list of everything that needs fixing, and how to fix it.
@@ -133,11 +134,6 @@ from io import StringIO
 print("Course setup OK (Python): Python", sys.version.split()[0], "pandas", pd.__version__)
 ```
 
-
-
-
-
-
 # R Tidyverse Implementation
 
 ## Import Data
@@ -167,8 +163,7 @@ conflict_raw <- read_csv("conflict_catalog.csv")
 head(conflict_raw)
 ```
 
-
-## Clean the each dataset
+## Cleaning 
 
 ### **Cleaning the Met dataset:**
 
@@ -178,8 +173,8 @@ head(conflict_raw)
 
 - Pick which columns to keep: Object Name, Title, Artist Display Name, Artist Nationality, Artist Gender, Object Begin Date, Object End Date, Medium, Tags, Tags Wikidata URL
 
-
 Keep the paintings from 1400 to 1999, the years the Conflict Catalog covers.
+
 ```{r}
 
 met_clean <- met_raw |>
@@ -190,6 +185,7 @@ met_clean
 ```
 
 Keep the columns of interest
+
 ```{r}
 met_clean <- met_clean |>
   select(object_name = 'Object Name',
@@ -206,9 +202,8 @@ met_clean <- met_clean |>
 met_clean
 ```
 
+Paintings by several artists list them with \|, e.g. “Alonzo Chappel\|Gilbert Stuart”. We will just keep the first artist
 
-Paintings by several artists list them with |, e.g. “Alonzo Chappel|Gilbert Stuart”. 
-We will just keep the first artist
 ```{r}
 met_clean <- met_clean |>
   separate_wider_delim(artist, delim = "|",
@@ -218,8 +213,8 @@ met_clean <- met_clean |>
 met_clean
 ```
 
+Keep the first nationality, splitting at \| (“American\|French”) and then at a comma (“American, born Germany”).
 
-Keep the first nationality, splitting at | (“American|French”) and then at a comma (“American, born Germany”).
 ```{r}
 met_clean <- met_clean |>
   separate_wider_delim(nationality, delim = "|",
@@ -233,8 +228,8 @@ met_clean
 
 ```
 
+Keep the first artist’s gender - I'm not sure if this the right move here, come back to this
 
-Keep the first artist’s gender - I'm not sure if this the right move here, come back to this 
 ```{r}
 met_clean <- met_clean |>
   separate_wider_delim(gender, delim = "|",
@@ -254,7 +249,6 @@ met_clean <- met_clean |>
 met_clean
 ```
 
-
 ## **Cleaning the MoMA dataset:**
 
 - Keep only Classification = painting (for now)
@@ -269,8 +263,8 @@ Columns in the Met dataset which don't have corresponding columns in the MoMA (w
 
 - The Met has tags but the MoMA doesn't. There may be tags about paintings online?? Or can we use AI to do this??
 
-
 Keep only paintings
+
 ```{r}
 moma_clean <- moma_raw |>
   filter(Classification == "Painting")   # 2458 rows
@@ -278,8 +272,8 @@ moma_clean <- moma_raw |>
 moma_clean
 ```
 
-
 Keep only the columns of interest
+
 ```{r}
 moma_clean <- moma_clean |>
   select(Classification, Title, Artist, Nationality, Gender, Date, Medium)
@@ -287,9 +281,7 @@ moma_clean <- moma_clean |>
 moma_clean
 ```
 
-Break up the date into pieces so we can build a start and end year to match the Met.
-We first tried doing this directly with `case_when`, but it kept throwing errors,
-so we split out every possible piece first and assemble them afterwards.
+Break up the date into pieces so we can build a start and end year to match the Met. We first tried doing this directly with `case_when`, but it kept throwing errors, so we split out every possible piece first and assemble them afterwards.
 
 ```{r}
 moma_clean <- moma_clean |>
@@ -310,6 +302,7 @@ moma_clean
 ```
 
 Build the start year from the century and year pieces: "19" and "30" become 1930.
+
 ```{r}
 moma_clean <- moma_clean |>
   mutate(start_year = as.numeric(start_century) * 100 + as.numeric(start_years))
@@ -317,10 +310,7 @@ moma_clean <- moma_clean |>
 moma_clean
 ```
 
-Build the end year:
-- a 4-digit end ("1930-1935") is used as it is
-- a 2-digit end ("1930-33") takes the start's century, so 1933
-- no end year means the end is the same as the start
+Build the end year: - a 4-digit end ("1930-1935") is used as it is - a 2-digit end ("1930-33") takes the start's century, so 1933 - no end year means the end is the same as the start
 
 ```{r}
 moma_clean <- moma_clean |>
@@ -333,8 +323,8 @@ moma_clean <- moma_clean |>
 moma_clean
 ```
 
-If the end year is in the next century ("1898-02"), the step above gives 1802,
-which is before the start, so we add 100 to get 1902.
+If the end year is in the next century ("1898-02"), the step above gives 1802, which is before the start, so we add 100 to get 1902.
+
 ```{r}
 moma_clean <- moma_clean |>
   mutate(end_year = case_when(
@@ -346,6 +336,7 @@ moma_clean
 ```
 
 Remove paintings with no date, and paintings from 2000 onwards (outside the Conflict Catalog's years).
+
 ```{r}
 moma_clean <- moma_clean |>
   drop_na(start_year) |>
@@ -355,6 +346,7 @@ moma_clean
 ```
 
 Drop the temporary columns we made while splitting the date.
+
 ```{r}
 moma_clean <- moma_clean |>
   select(Classification, Title, Artist, Nationality, Gender, Medium, start_year, end_year)
@@ -363,6 +355,7 @@ moma_clean
 ```
 
 Remove the brackets from Nationality: “(American)” becomes “American”. For group works like “(American) (French)” we keep the first.
+
 ```{r}
 moma_clean <- moma_clean |>
   separate_wider_regex(Nationality,
@@ -373,6 +366,7 @@ moma_clean
 ```
 
 Do the same for Gender: “(male)” becomes “male”.
+
 ```{r}
 
 moma_clean <- moma_clean |>
@@ -384,6 +378,7 @@ moma_clean
 ```
 
 An empty “()” leaves "", which we turn into missing.
+
 ```{r}
 
 moma_clean <- moma_clean |>
@@ -392,8 +387,6 @@ moma_clean <- moma_clean |>
 
 moma_clean
 ```
-
-
 
 **Cleaning the Conflict Catalog:**
 
@@ -407,8 +400,8 @@ moma_clean
 
   - Actors (i.e. people who are fighting): second comma-separated part goes into Actors
 
-
 Keep conflicts with 1,000+ deaths, then drop any without both years.
+
 ```{r}
 conflict_clean <- conflict_raw |>
   filter(TotalFatalities >= 1000) |>     # 1033 rows
@@ -418,6 +411,7 @@ conflict_clean
 ```
 
 Keep the columns of interest
+
 ```{r}
 
 conflict_clean <- conflict_clean |>
@@ -432,8 +426,8 @@ conflict_clean <- conflict_clean |>
 conflict_clean
 ```
 
-
 Split the years off the end of the name: “France-Siam, 1892-93” becomes “France-Siam” and “1892-93”.
+
 ```{r}
 
 conflict_clean <- conflict_clean |>
@@ -447,8 +441,8 @@ conflict_clean <- conflict_clean |>
 conflict_clean
 ```
 
+Split the two parties on the dash: “France-Siam” becomes “France” and “Siam”. We use the dash (commas list allies of the same side).
 
-Split the two parties on the dash: “France-Siam” becomes “France” and “Siam”. We use the dash (commas list allies of the same side). 
 ```{r}
 
 conflict_clean <- conflict_clean |>
@@ -461,9 +455,7 @@ conflict_clean <- conflict_clean |>
 conflict_clean
 ```
 
-
-Most conflicts have no common name, so we fill the blanks with the conflict name without its years (this is still tbd). 
-<!--```{r}
+Most conflicts have no common name, so we fill the blanks with the conflict name without its years (this is still tbd). <!--```{r}
 conflict_clean <- conflict_clean |>
   mutate(common_name = case_when(
     is.na(common_name) ~ conflict,
@@ -472,7 +464,6 @@ conflict_clean <- conflict_clean |>
 
 conflict_clean
 ```-->
-
 
 Region mapped from *Brecke (1999), "Violent Conflicts 1400 A.D. to the Present in Different Regions of the World"*. The paper doesn't define -9; but it is used once, for World War II, so we label it ourselves.
 
@@ -500,8 +491,6 @@ conflict_clean <- conflict_clean |>
 conflict_clean
 ```
 
-
-
 ## Transformations
 
 We need to decide a common schema for the Met & MoMA datasets (perhaps just picking the column names in the Met dataset).
@@ -521,7 +510,6 @@ We need to decide a common schema for the Met & MoMA datasets (perhaps just pick
 | `end_year`    | Object End Date     | End Year     |
 | `medium`      | Medium              | Medium       |
 | `tags`        | Tags                | NA           |
-
 
 ## **Is a painting morbid or not?**
 
@@ -543,7 +531,6 @@ Assign a "crisis_status":
 
 - none: no matching conflict
 
-
 - Assumption is that we treat the artist’s nationality as where the painting was made. This won’t always be true but it is a compromise for now.
 
 ## Analysis
@@ -558,7 +545,7 @@ We will do some aggregations to determine whether paintings are more morbid when
 
 - Check whether large conflicts are linked to a bigger increase than small ones (still thinking through how to do this one)
 
-## DuckDB SQL
+# DuckDB SQL
 
 ```{sql}
 # create the connection
@@ -610,14 +597,13 @@ FROM conflict_raw
 LIMIT 5;
 ```
 
-### Clean  
+### Clean
 
 ### Transform
 
 ### Analysis output
 
-
-## Python Pandas
+# Python Pandas
 
 ### Load Source A: The Met
 
@@ -667,19 +653,11 @@ conflict_raw.head(5)
 
 ### Clean
 
-
-### Transform 
-
-
-
+### Transform
 
 ### Analysis output
 
-
-
-
-
-## Excel Power Query
+# Excel Power Query
 
 <!-- Power Query can't run in Quarto: add screenshots of each step here -->
 
