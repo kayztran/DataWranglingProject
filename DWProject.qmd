@@ -7,30 +7,29 @@ format:
     df-print: paged
 ---
 
-## Data Sources
+# Data Sources
 
 We use three data sources from three different organizations: The Metropolitan Museum of Art, The Museum of Modern Art, and the Conflict Catalog (Peter Brecke, Georgia Tech).
 
-### Source A: The Met Open Access
+## Source A: The Met Open Access
 
-![Raw Met data: header row and first rows of MetObjects.csv](images/met_raw.png){width="100%" fig-alt="First rows of the Met Open Access CSV"}
+(maybe add image here somewhere)
 
-**Issues reading this source:** `Object Date` is free text (e.g. "ca. 1650", "19th century"), so we drop it and use the numeric `Object Begin Date` / `Object End Date` columns instead. Many columns are more than 50% empty.
+**Issues reading this source:** 'Object Date' is free text (ex: "19th century"), so we drop it and use the numeric 'Object Begin Date / 'Object End Date' columns instead. Many columns are empty so we need to find a way to address that (drop or fill?).
 
-### Source B: MoMA Collection
+## Source B: MoMA Collection
 
-![Raw MoMA data: header row and first rows of Artworks.csv](images/moma_raw.png){width="100%" fig-alt="First rows of the MoMA Artworks CSV"}
+(maybe add image here somewhere)
 
-**Issues reading this source:** `ArtistBio`, `Nationality`, and `Gender` are wrapped in parentheses, and `Date` mixes formats ("1896", "1976-77", "c. 1917").
+**Issues reading this source:** 'ArtistBio', 'Nationality', and 'Gender' are wrapped in parentheses, and 'Date' mixes formats ("1896", "1976-77", "c. 1917").
 
-### Source C: Conflict Catalog
+## Source C: Conflict Catalog
 
-![Raw Conflict Catalog data: header row and first rows](images/conflict_raw.png){width="100%" fig-alt="First rows of the Conflict Catalog spreadsheet"}
+(maybe add image here somewhere)
 
-**Issues reading this source:** the `Name` column has the years embedded in the conflict name, fatality counts are often missing, and `Common Name` is blank for most rows.
+**Issues reading this source:** the 'Name' column has the years embedded in the conflict name, fatality counts are often missing, and 'Common Name' is blank for most rows.
 
-## Course set up
-
+# Course set up
 ```{r}
 # Checks that R and each package are installed and new enough for this course.
 # Stops with a list of everything that needs fixing, and how to fix it.
@@ -136,86 +135,445 @@ print("Course setup OK (Python): Python", sys.version.split()[0], "pandas", pd._
 
 
 
-## R Tidyverse
+
+
+
+# R Tidyverse Implementation
+
+## Import Data
 
 ### Load Source A: The Met
 
 ```{r}
-#| label: r-load-met
-# guess_max: some columns look numeric for thousands of rows, then turn to text
-met_raw <- read_csv("data/MetObjects.csv", guess_max = 100000)
+met_raw <- read_csv("MetObjects.csv")
 
-glimpse(met_raw)
-```
-
-```{r}
-#| label: r-preview-met
-met_raw |>
-  select(`Object ID`, Title, `Object Date`, `Object Begin Date`,
-         `Object End Date`, Medium, Classification) |>
-  head(5)
+head(met_raw)
 ```
 
 ### Load Source B: MoMA
 
 ```{r}
-#| label: r-load-moma
-moma_raw <- read_csv("data/Artworks.csv")
+moma_raw <- read_csv("Artworks.csv")
 
-glimpse(moma_raw)
-```
-
-```{r}
-#| label: r-preview-moma
-moma_raw |>
-  select(Title, Artist, ArtistBio, Nationality, Gender, Date, Medium) |>
-  head(5)
+head(moma_raw)
 ```
 
 ### Load Source C: Conflict Catalog
 
 ```{r}
-#| label: r-load-conflict
-library(readxl)
 
-conflict_raw <- read_excel("data/conflict_catalog.xlsx")
+conflict_raw <- read_csv("conflict_catalog.csv")
 
-glimpse(conflict_raw)
+head(conflict_raw)
 ```
+
+
+## Clean the each dataset
+
+### **Cleaning the Met dataset:**
+
+- Keep only Object Name = painting (for now)
+
+- Keep only paintings from 1400 - 2000 (this is the only range the Conflict Catalog covers)
+
+- Pick which columns to keep: Object Name, Title, Artist Display Name, Artist Nationality, Artist Gender, Object Begin Date, Object End Date, Medium, Tags, Tags Wikidata URL
+
+
+Keep the paintings from 1400 to 1999, the years the Conflict Catalog covers.
+```{r}
+
+met_clean <- met_raw |>
+  filter(`Object Name` == "Painting") |>                              
+  filter(`Object Begin Date` >= 1400 & `Object Begin Date` < 2000)     # 5936 rows
+
+met_clean
+```
+
+Keep the columns of interest
+```{r}
+met_clean <- met_clean |>
+  select(object_name = 'Object Name',
+         title = Title,
+         artist = 'Artist Display Name',
+         nationality = 'Artist Nationality',
+         gender = 'Artist Gender',
+         start_year = 'Object Begin Date',
+         end_year = 'Object End Date',
+         medium = Medium,
+         tags = Tags,
+         tags_wikidata_url = 'Tags Wikidata URL')
+
+met_clean
+```
+
+
+Paintings by several artists list them with |, e.g. “Alonzo Chappel|Gilbert Stuart”. 
+We will just keep the first artist
+```{r}
+met_clean <- met_clean |>
+  separate_wider_delim(artist, delim = "|",
+                       names = c("artist"),
+                       too_many = "drop")
+
+met_clean
+```
+
+
+Keep the first nationality, splitting at | (“American|French”) and then at a comma (“American, born Germany”).
+```{r}
+met_clean <- met_clean |>
+  separate_wider_delim(nationality, delim = "|",
+                       names = c("nationality"),
+                       too_many = "drop") |>
+  separate_wider_delim(nationality, delim = ",",
+                       names = c("nationality"),
+                       too_many = "drop")
+
+met_clean
+
+```
+
+
+Keep the first artist’s gender - I'm not sure if this the right move here, come back to this 
+```{r}
+met_clean <- met_clean |>
+  separate_wider_delim(gender, delim = "|",
+                       names = c("gender"),
+                       too_many = "drop")
+
+met_clean
+```
+
+Splitting can leave empty text "", which we turn into missing values. We also lowercase gender to match MoMA.
 
 ```{r}
-#| label: r-preview-conflict
-conflict_raw |>
-  head(5)
+met_clean <- met_clean |>
+  mutate(nationality = na_if(nationality, ""),
+         gender = na_if(str_to_lower(gender), ""))
+
+met_clean
 ```
 
-### Clean and combine
 
-### Analysis output
+## **Cleaning the MoMA dataset:**
 
+- Keep only Classification = painting (for now)
+
+- Keep only paintings before 2000
+
+- Pick which columns to keep: Classification, Title, Artist, Nationality, Gender, Date, Medium
+
+Columns in the Met dataset which don't have corresponding columns in the MoMA (we need to find how to populate these):
+
+- The Met has Object begin & end dates, the MoMA has just "date". This can be repeated in 2 columns start year & end year (they can be the same if there is only 1 date, or they can be different if the date is a range - this will have to be done using CaseWhen, probably).
+
+- The Met has tags but the MoMA doesn't. There may be tags about paintings online?? Or can we use AI to do this??
+
+
+Keep only paintings
+```{r}
+moma_clean <- moma_raw |>
+  filter(Classification == "Painting")   # 2458 rows
+
+moma_clean
+```
+
+
+Keep only the columns of interest
+```{r}
+moma_clean <- moma_clean |>
+  select(Classification, Title, Artist, Nationality, Gender, Date, Medium)
+
+moma_clean
+```
+
+Break up the date into pieces so we can build a start and end year to match the Met.
+We first tried doing this directly with `case_when`, but it kept throwing errors,
+so we split out every possible piece first and assemble them afterwards.
+
+```{r}
+moma_clean <- moma_clean |>
+  separate_wider_regex(
+    Date,
+    patterns = c(
+      before = ".*?",                # text before the year, like "c. "
+      start_century = "\\d{2}",      # "19" in 1930
+      start_years = "\\d{2}",        # "30" in 1930
+      dash = "\\s*[-–]?\\s*",        # dash between years
+      end_years = "\\d*",            # "33" in 1930-33, or "1935" in 1930-1935
+      after = ".*"                   # leftover text, like "s" in "1910s"
+    ),
+    too_few = "align_start"          # don't error on rows with no or incomplete dates
+  )
+
+moma_clean
+```
+
+Build the start year from the century and year pieces: "19" and "30" become 1930.
+```{r}
+moma_clean <- moma_clean |>
+  mutate(start_year = as.numeric(start_century) * 100 + as.numeric(start_years))
+
+moma_clean
+```
+
+Build the end year:
+- a 4-digit end ("1930-1935") is used as it is
+- a 2-digit end ("1930-33") takes the start's century, so 1933
+- no end year means the end is the same as the start
+
+```{r}
+moma_clean <- moma_clean |>
+  mutate(end_year = case_when(
+    str_length(end_years) == 4 ~ as.numeric(end_years),
+    str_length(end_years) == 2 ~ as.numeric(start_century) * 100 + as.numeric(end_years),
+    TRUE ~ start_year
+  ))
+
+moma_clean
+```
+
+If the end year is in the next century ("1898-02"), the step above gives 1802,
+which is before the start, so we add 100 to get 1902.
+```{r}
+moma_clean <- moma_clean |>
+  mutate(end_year = case_when(
+    end_year < start_year ~ end_year + 100,
+    TRUE ~ end_year
+  ))
+
+moma_clean
+```
+
+Remove paintings with no date, and paintings from 2000 onwards (outside the Conflict Catalog's years).
+```{r}
+moma_clean <- moma_clean |>
+  drop_na(start_year) |>
+  filter(start_year < 2000)   # 2225 rows
+
+moma_clean
+```
+
+Drop the temporary columns we made while splitting the date.
+```{r}
+moma_clean <- moma_clean |>
+  select(Classification, Title, Artist, Nationality, Gender, Medium, start_year, end_year)
+
+moma_clean
+```
+
+Remove the brackets from Nationality: “(American)” becomes “American”. For group works like “(American) (French)” we keep the first.
+```{r}
+moma_clean <- moma_clean |>
+  separate_wider_regex(Nationality,
+                       patterns = c("\\(", nationality = ".*?", "\\).*"),
+                       too_few = "align_start")
+
+moma_clean
+```
+
+Do the same for Gender: “(male)” becomes “male”.
+```{r}
+
+moma_clean <- moma_clean |>
+  separate_wider_regex(Gender,
+                       patterns = c("\\(", gender = ".*?", "\\).*"),
+                       too_few = "align_start")
+
+moma_clean
+```
+
+An empty “()” leaves "", which we turn into missing.
+```{r}
+
+moma_clean <- moma_clean |>
+  mutate(nationality = na_if(nationality, ""),
+         gender = na_if(gender, ""))
+
+moma_clean
+```
+
+
+
+**Cleaning the Conflict Catalog:**
+
+- Keep only rows with more than 1000 fatalities
+
+- Columns to keep: Name, Start Year, End Year
+
+- Split contents of "Name" column into 2:
+
+  - Country: first comma-separated part goes into Country
+
+  - Actors (i.e. people who are fighting): second comma-separated part goes into Actors
+
+
+Keep conflicts with 1,000+ deaths, then drop any without both years.
+```{r}
+conflict_clean <- conflict_raw |>
+  filter(TotalFatalities >= 1000) |>     # 1033 rows
+  drop_na(StartYear, EndYear)            # 1024 rows
+
+conflict_clean
+```
+
+Keep the columns of interest
+```{r}
+
+conflict_clean <- conflict_clean |>
+  select(common_name = 'Common Name',
+         name = Name,
+         start_year = StartYear,
+         end_year = EndYear,
+         total_fatalities = TotalFatalities,
+         region = Region,
+         decade = Decade)
+
+conflict_clean
+```
+
+
+Split the years off the end of the name: “France-Siam, 1892-93” becomes “France-Siam” and “1892-93”.
+```{r}
+
+conflict_clean <- conflict_clean |>
+  separate_wider_regex(name,
+                       patterns = c(conflict = ".*",
+                                    ",\\s*",
+                                    name_years = "\\d{4}.*"),
+                       too_few = "align_start",
+                       cols_remove = FALSE)
+
+conflict_clean
+```
+
+
+Split the two parties on the dash: “France-Siam” becomes “France” and “Siam”. We use the dash (commas list allies of the same side). 
+```{r}
+
+conflict_clean <- conflict_clean |>
+  separate_wider_delim(conflict, delim = "-",
+                       names = c("side_a", "side_b"),
+                       too_many = "merge",
+                       too_few = "align_start",
+                       cols_remove = FALSE)
+
+conflict_clean
+```
+
+
+Most conflicts have no common name, so we fill the blanks with the conflict name without its years (this is still tbd). 
+<!--```{r}
+conflict_clean <- conflict_clean |>
+  mutate(common_name = case_when(
+    is.na(common_name) ~ conflict,
+    TRUE ~ common_name
+  ))
+
+conflict_clean
+```-->
+
+
+Region mapped from *Brecke (1999), "Violent Conflicts 1400 A.D. to the Present in Different Regions of the World"*. The paper doesn't define -9; but it is used once, for World War II, so we label it ourselves.
+
+```{r}
+region_lookup <- tribble(
+  ~region, ~region_name,
+  1,  "North America, Central America, and the Caribbean",
+  2,  "South America",
+  3,  "Europe west of 15°E, plus Sweden and Italy",
+  4,  "Europe east of 15°E, including the Caucasus",
+  5,  "Middle East",
+  6,  "North Africa",
+  7,  "West & Central Africa",
+  8,  "East & South Africa",
+  9,  "Central Asia",
+  10, "South Asia",
+  11, "Southeast Asia",
+  12, "East Asia",
+  -9, "Multiple regions (our label)"
+)
+
+conflict_clean <- conflict_clean |>
+  left_join(region_lookup, by = join_by(region))
+
+conflict_clean
+```
+
+
+
+## Transformations
+
+We need to decide a common schema for the Met & MoMA datasets (perhaps just picking the column names in the Met dataset).
+
+- We will add a new column to the Met table "museum", and the values for this will be "Met" for all (no clue how to do this tbh)
+
+- We will add the rows from the MoMA table to the Met dataset, and the values for these rows on the "museum" column will be "MoMA"
+
+| Common column | Met source          | MoMA source  |
+|---------------|---------------------|--------------|
+| `museum`      | “Met” (new)         | “MoMA” (new) |
+| `title`       | Title               | Title        |
+| `artist`      | Artist Display Name | Artist       |
+| `nationality` | Artist Nationality  | Nationality  |
+| `gender`      | Artist Gender       | Gender       |
+| `start_year`  | Object Begin Date   | Start Year   |
+| `end_year`    | Object End Date     | End Year     |
+| `medium`      | Medium              | Medium       |
+| `tags`        | Tags                | NA           |
+
+
+## **Is a painting morbid or not?**
+
+- We will create a lookup table "morbidity" of morbid keywords (tags) from the Met & MoMA datasets. Each keyword will have a classification of "is_morbid" or "not_morbid".
+
+- We will left join the "morbidity" to the combined Met & MoMA dataset on the keywords column. If a keyword from the "morbidity" table's keyword column is present in the combined table's keyword list, the corresponding classification is added to the left table. (I'm actually not sure if this is how it works?? Or if the values in the cells need to be exactly equal for a join)
+
+We need to create a lookup table for country names, and then compare with the country names being used in each of the datasets.
+
+We will add a "standardised country name" column to the three datasets by joining the lookup table.
+
+Then we will join the Conflicts table (left join) to the Met & MoMA combined table on the "standardised country name" column.
+
+Assign a "crisis_status":
+
+- during: painted between StartYear and EndYear of a conflict in the artist’s country
+
+- after: painted 1–10 years after a conflict ended
+
+- none: no matching conflict
+
+
+- Assumption is that we treat the artist’s nationality as where the painting was made. This won’t always be true but it is a compromise for now.
+
+## Analysis
+
+We will do some aggregations to determine whether paintings are more morbid when conflicts happen:
+
+- Group by crisis_status (during / after / none) and calculate the share of morbid paintings in each group. Present it as a table and bar chart.
+
+- Group by decade and plot the share of morbid paintings next to the total conflict fatalities per decade. Can also check the correlation for the same decade and with a one-decade lag (fatalities in decade *t* vs. morbidity in decade *t+1*)
+
+- For countries with enough paintings (e.g. 100+), compare the morbid share in conflict years with non-conflict years in the same country. We can see if some countries/cultures produce more morbid art by default.
+
+- Check whether large conflicts are linked to a bigger increase than small ones (still thinking through how to do this one)
 
 ## DuckDB SQL
 
-```{r}
-#| label: sql-excel-extension
-# DuckDB needs its excel extension to read the Conflict Catalog .xlsx
-dbExecute(con, "INSTALL excel;")
-dbExecute(con, "LOAD excel;")
+```{sql}
+# create the connection
 ```
 
 ### Load Source A: The Met
 
 ```{sql}
-#| label: sql-load-met
-#| connection: con
 CREATE OR REPLACE TABLE met_raw AS
 SELECT *
-FROM read_csv('data/MetObjects.csv', sample_size = -1);
+FROM read_csv('MetObjects.csv', sample_size = -1);
 ```
 
 ```{sql}
-#| label: sql-preview-met
-#| connection: con
+# preview
 SELECT "Object ID", Title, "Object Date", "Object Begin Date",
        "Object End Date", Medium, Classification
 FROM met_raw
@@ -225,16 +583,13 @@ LIMIT 5;
 ### Load Source B: MoMA
 
 ```{sql}
-#| label: sql-load-moma
-#| connection: con
 CREATE OR REPLACE TABLE moma_raw AS
 SELECT *
-FROM read_csv('data/Artworks.csv');
+FROM read_csv('Artworks.csv');
 ```
 
 ```{sql}
-#| label: sql-preview-moma
-#| connection: con
+#preview
 SELECT Title, Artist, ArtistBio, Nationality, Gender, Date, Medium
 FROM moma_raw
 LIMIT 5;
@@ -243,22 +598,21 @@ LIMIT 5;
 ### Load Source C: Conflict Catalog
 
 ```{sql}
-#| label: sql-load-conflict
-#| connection: con
 CREATE OR REPLACE TABLE conflict_raw AS
 SELECT *
-FROM read_xlsx('data/conflict_catalog.xlsx');
+FROM read_xlsx('conflict_catalog.csv');
 ```
 
 ```{sql}
-#| label: sql-preview-conflict
-#| connection: con
+# preview
 SELECT *
 FROM conflict_raw
 LIMIT 5;
 ```
 
-### Clean and combine
+### Clean  
+
+### Transform
 
 ### Analysis output
 
@@ -268,15 +622,14 @@ LIMIT 5;
 ### Load Source A: The Met
 
 ```{python}
-#| label: py-load-met
-# low_memory=False: read the whole file before choosing column types
-met_raw = pd.read_csv("data/MetObjects.csv", low_memory=False)
+
+met_raw = pd.read_csv("MetObjects.csv")
 
 met_raw.info()
 ```
 
 ```{python}
-#| label: py-preview-met
+# columns for the met
 met_cols = [
     "Object ID", "Title", "Object Date", "Object Begin Date",
     "Object End Date", "Medium", "Classification",
@@ -287,14 +640,13 @@ met_raw[met_cols].head(5)
 ### Load Source B: MoMA
 
 ```{python}
-#| label: py-load-moma
-moma_raw = pd.read_csv("data/Artworks.csv")
+moma_raw = pd.read_csv("Artworks.csv")
 
 moma_raw.info()
 ```
 
 ```{python}
-#| label: py-preview-moma
+# columns for moma
 moma_cols = [
     "Title", "Artist", "ArtistBio", "Nationality", "Gender", "Date", "Medium",
 ]
@@ -304,20 +656,27 @@ moma_raw[moma_cols].head(5)
 ### Load Source C: Conflict Catalog
 
 ```{python}
-#| label: py-load-conflict
-conflict_raw = pd.read_excel("data/conflict_catalog.xlsx")
+conflict_raw = pd.read_csv("data/conflict_catalog.csv")
 
 conflict_raw.info()
 ```
 
 ```{python}
-#| label: py-preview-conflict
 conflict_raw.head(5)
 ```
 
-### Clean and combine
+### Clean
+
+
+### Transform 
+
+
+
 
 ### Analysis output
+
+
+
 
 
 ## Excel Power Query
