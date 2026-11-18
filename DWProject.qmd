@@ -1,5 +1,5 @@
 ---
-title: "Morbid Symbolism in Art and Historical Crises"
+title: "Morbid Symbolism in Art"
 author: "Kayla Tran (kt26422), Pranati Kompella (pk24235)"
 format: 
   html:
@@ -163,7 +163,7 @@ conflict_raw <- read_csv("conflict_catalog.csv")
 head(conflict_raw)
 ```
 
-## Cleaning 
+## Cleaning
 
 ### **Cleaning the Met dataset:**
 
@@ -359,8 +359,7 @@ Remove the brackets from Nationality: “(American)” becomes “American”. F
 ```{r}
 moma_clean <- moma_clean |>
   separate_wider_regex(Nationality,
-                       patterns = c("\\(", nationality = ".*?", "\\).*"),
-                       too_few = "align_start")
+                       patterns = c("\\(", nationality = ".*?", "\\).*"))
 
 moma_clean
 ```
@@ -371,8 +370,7 @@ Do the same for Gender: “(male)” becomes “male”.
 
 moma_clean <- moma_clean |>
   separate_wider_regex(Gender,
-                       patterns = c("\\(", gender = ".*?", "\\).*"),
-                       too_few = "align_start")
+                       patterns = c("\\(", gender = ".*?", "\\).*"))
 
 moma_clean
 ```
@@ -388,7 +386,7 @@ moma_clean <- moma_clean |>
 moma_clean
 ```
 
-**Cleaning the Conflict Catalog:**
+### **Cleaning the Conflict Catalog:**
 
 - Keep only rows with more than 1000 fatalities
 
@@ -467,6 +465,8 @@ conflict_clean
 
 Region mapped from *Brecke (1999), "Violent Conflicts 1400 A.D. to the Present in Different Regions of the World"*. The paper doesn't define -9; but it is used once, for World War II, so we label it ourselves.
 
+the link: https://peregrinosxlapaz.com/wp-content/uploads/2024/09/Brecke-PSS-1999-paper-Violent-Conflicts-1400-AD-to-the-Present.pdf
+
 ```{r}
 region_lookup <- tribble(
   ~region, ~region_name,
@@ -490,6 +490,9 @@ conflict_clean <- conflict_clean |>
 
 conflict_clean
 ```
+
+*note: too_many and too_few were suggested after R threw errors because of inconsistencies found in the values; we used AI assistance to help us debug this, but we will have to come back to fully understand this; we would appreciate any information about using these parameters in our project if you have any.* 
+
 
 ## Transformations
 
